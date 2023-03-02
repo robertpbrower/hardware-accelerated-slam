@@ -13,7 +13,7 @@ function [ekf_l, ekf_m, ekf_s] = ex4_slam()
 
     load('e3.mat', 'odo_s', 'zind_s', 'z_s');
 
-    
+    save("e3.mat")
 
     [x_est, P_est, indices] = E3(odo_s, zind_s, z_s, V, W, x0, P0);
 
