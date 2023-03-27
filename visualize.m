@@ -45,6 +45,8 @@ function statistics = visualize(x_est, P_est, indices)
 
     load("e3_new.mat", 'map', 'x_hist');
 
+    save("sample_out", "x_est", "P_est", "indices")
+
     statistics = NaN(1, 12);
 
     % Plot ground truth landmarks (black hexagrams) and trajectory (blue line)

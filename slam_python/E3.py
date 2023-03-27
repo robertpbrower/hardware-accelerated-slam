@@ -22,29 +22,31 @@
 #                    and the next two rows correspond to landmark 4, etc.
 
 import numpy as np
+from math import fabs, pi
     
 def E3(odo = None,zind = None,z = None,V = None,W = None,x0 = None,P0 = None): 
-    time:int = odo.shape[2-1]
+    time = len(odo[0])
     x_est = np.array([x0])
     P_est = np.array([P0])
-    seenLandmarks = np.array([])
-    for t in np.arange(1,time).reshape(-1):4
+    seenLandmarks = np.array([]).astype(int)
+
+    for t in range(time):
         # ----------------- prediction step of EKF -----------------
         # predicted mean
         x_pred = convertPos(odo[:,t],x_est[t])
-        theta = x_est[t](3)
+        theta = x_est[t][2]
         # predicted covariance
-        Fx = calculateTransitionJacobian(odo(1,t),theta,seenLandmarks)
+        Fx = calculateTransitionJacobian(odo[0,t],theta,seenLandmarks)
         Fv = calcTransitionVarJacob(theta,seenLandmarks)
-        pPred = Fx * P_est[t] * np.transpose(Fx) + Fv * V * np.transpose(Fv)
-        landmarkId = zind(t)
+        pPred = Fx @ P_est[t] @ np.transpose(Fx) + Fv @ V @ np.transpose(Fv)
+        landmarkId = zind[t].astype(int)
         # ----------------- decide what action to perform -----------------
         if landmarkId == 0:
             # predict next position and covariance based off of odometry
-            x_est[t + 1] = x_pred
-            P_est[t + 1] = pPred
+            x_est = np.concatenate((x_est, [x_pred]), axis=0)
+            P_est = np.concatenate((P_est, [pPred]), axis=0)
         else:
-            if ismember(landmarkId,seenLandmarks):
+            if landmarkId in seenLandmarks:
                 # update with Hx and joint motion model
                 Hx = createJointJacobian(x_est[t],theta,z[t],seenLandmarks,landmarkId)
                 error = calculateError(x_est[t],landmarkId,seenLandmarks,z[t],theta)
@@ -54,7 +56,7 @@ def E3(odo = None,zind = None,z = None,V = None,W = None,x0 = None,P0 = None):
                 P_est[t + 1] = pPred - K * Hx * pPred
             else:
                 # insert new landmark
-                seenLandmarks[seenLandmarks.shape[2-1] + 1] = landmarkId
+                seenLandmarks = np.append(seenLandmarks, landmarkId)
                 # calculate insertion jacobian
                 Yz = createInsertionJacobian(theta,z[t],pPred)
                 # predict next position based on odometry and add the new
@@ -70,12 +72,12 @@ def E3(odo = None,zind = None,z = None,V = None,W = None,x0 = None,P0 = None):
     # convert odometry readings to a new world coordinate
     
 def convertPos(odometry = None,oldRobotState = None): 
-    deltaD = odometry(1)
-    deltaTheta = odometry(2)
-    pos = oldRobotState
-    pos[1] = oldRobotState(1) + deltaD * np.cos(oldRobotState(3))
-    pos[2] = oldRobotState(2) + deltaD * np.sin(oldRobotState(3))
-    pos[3] = wrapToPi(oldRobotState(3) + deltaTheta)
+    deltaD = odometry[0]
+    deltaTheta = odometry[1]
+    pos = oldRobotState.astype(float)
+    pos[0] = oldRobotState[0] + deltaD * np.cos(oldRobotState[2])
+    pos[1] = oldRobotState[1] + deltaD * np.sin(oldRobotState[2])
+    pos[2] = wrapToPi(oldRobotState[2] + deltaTheta)
     return pos
     
     # create the insertion jacobian Yz
@@ -83,8 +85,12 @@ def convertPos(odometry = None,oldRobotState = None):
 def createInsertionJacobian(theta = None,measurment = None,pPred = None): 
     beta = measurment(2)
     r = measurment(1)
-    Gx = np.array([[1,0,- r * np.sin(wrapToPi(theta + beta))],[0,1,r * np.cos(wrapToPi(theta + beta))]])
-    Gz = np.array([[np.cos(wrapToPi(theta + beta)),- r * np.sin(wrapToPi(theta + beta))],[np.sin(wrapToPi(theta + beta)),r * np.cos(wrapToPi(theta + beta))]])
+    Gx = np.array([[1,0,- r * np.sin(wrapToPi(theta + beta))],
+                   [0,1,r * np.cos(wrapToPi(theta + beta))]])
+    Gz = np.array([[np.cos(wrapToPi(theta + beta)),
+                    - r * np.sin(wrapToPi(theta + beta))],
+                    [np.sin(wrapToPi(theta + beta)),
+                     r * np.cos(wrapToPi(theta + beta))]])
     n = pPred.shape[1-1]
     YzCell = np.array([])
     YzCell[1,1] = np.eye(n,n)
@@ -104,16 +110,18 @@ def createInsertionJacobian(theta = None,measurment = None,pPred = None):
 def createJointJacobian(robotState = None,theta = None,measurement = None,seenLandmarks = None,landmarkId = None): 
     landmarkPos = convertLandmarkPos(robotState,measurement,theta)
     # current robot position
-    x_v = robotState(1)
-    y_v = robotState(2)
+    x_v = robotState[0]
+    y_v = robotState[1]
     # measured landmark pose
-    r = measurement(1)
-    x_i = landmarkPos(1)
-    y_i = landmarkPos(2)
-    Hpi = np.array([[(x_i - x_v) / r(y_i - y_v) / r],[- (y_i - y_v) / r ** 2(x_i - x_v) / r ** 2]])
+    r = measurement[0]
+    x_i = landmarkPos[0]
+    y_i = landmarkPos[1]
+    Hpi = np.array([[(x_i - x_v) / r, (y_i - y_v) / r],
+                    [- (y_i - y_v) / r ** 2, (x_i - x_v) / r ** 2]])
     # est landmark position
-    index = find(seenLandmarks == landmarkId)
-    Hx_v = np.array([[- (x_i - x_v) / r,- (y_i - y_v) / r,0],[(y_i - y_v) / r ** 2,- (x_i - x_v) / r ** 2,- 1]])
+    index = np.where(seenLandmarks == landmarkId)
+    Hx_v = np.array([[- (x_i - x_v) / r, -(y_i - y_v) / r,0],
+                     [(y_i - y_v) / r ** 2, - (x_i - x_v) / r ** 2,- 1]])
     # construct Hx matrix
     sizeLandmarks = seenLandmarks.shape[2-1]
     zeros1 = np.zeros((2,2 * (index - 1)))
@@ -135,7 +143,7 @@ def convertLandmarkPos(robotState = None,measurement = None,theta = None):
     
 def calculateError(robotState = None,landmarkId = None,seenLandmarks = None,measurement = None,theta = None): 
     # get previous est of landmark pose
-    index = find(seenLandmarks == landmarkId)
+    index = seenLandmarks.toList().index(landmarkId)
     x_i = robotState(3 + 2 * index - 1)
     y_i = robotState(3 + 2 * index)
     # get current estimate of robot pose
@@ -158,28 +166,44 @@ def calculateError(robotState = None,landmarkId = None,seenLandmarks = None,meas
 # matrix
     
 def calculateTransitionJacobian(delta = None,theta = None,seenLandmarks = None): 
-    FxBase = np.array([[1,0,- delta * np.sin(theta)],
-                       [0,1,delta * np.cos(theta)],
+    FxBase = np.array([[1,0, -delta * np.sin(theta)],
+                       [0,1, delta * np.cos(theta)],
                        [0,0,1]])
-    numLandmarks = seenLandmarks.shape[2-1]
-    Fx = np.array([[FxBase,np.zeros((3,2 * numLandmarks))],[np.zeros((2 * numLandmarks,3)),np.eye(2 * numLandmarks,2 * numLandmarks)]])
+    numLandmarks = len(seenLandmarks)
+    Fx = np.concatenate((FxBase, np.zeros((3,2 * numLandmarks))), axis=1)
+    Fx = np.concatenate((Fx, np.concatenate((np.zeros((2 * numLandmarks, 3)), np.eye(2 * numLandmarks, 2 * numLandmarks)), axis=1)), axis=0)
+    # Fx = np.array([[FxBase, np.zeros((3,2 * numLandmarks))],
+    #                [np.zeros((2 * numLandmarks, 3)), np.eye(2 * numLandmarks, 2 * numLandmarks)]])
     return Fx
     
     # calculate the transition variance jacobian for the predicted covariance
 # matrix
     
 def calcTransitionVarJacob(theta = None,seenLandmarks = None): 
-    FvBase = np.array([[np.cos(theta),0],[np.sin(theta),0],[0,1]])
-    numLandmarks = seenLandmarks.shape[2-1]
-    Fv = np.array([[FvBase],[np.zeros((2 * numLandmarks,2))]])
+    FvBase = np.array([[np.cos(theta),0],
+                       [np.sin(theta),0],
+                       [0,1]])
+    numLandmarks = len(seenLandmarks)
+    Fv = np.concatenate((FvBase, np.zeros((2 * numLandmarks,2))), axis=0)
     return Fv
     
-def wrapToPi(x):
-    xwrap = np.remainder(x, 2 * np.pi)
-    mask = np.abs(xwrap) > np.pi
-    xwrap[mask] -= 2 * np.pi * np.sign(xwrap[mask])
-    mask1 = x < 0
-    mask2 = np.remainder(x, np.pi) == 0
-    mask3 = np.remainder(x, 2 * np.pi) != 0
-    xwrap[mask1 & mask2 & mask3] -= 2 * np.pi
-    return xwrap
+def wrapToPi(input_angle):
+    revolutions = int((input_angle + np.sign(input_angle) * pi) / (2 * pi))
+
+    p1 = truncated_remainder(input_angle + np.sign(input_angle) * pi, 2 * pi)
+    p2 = (np.sign(np.sign(input_angle)
+                  + 2 * (np.sign(fabs((truncated_remainder(input_angle + pi, 2 * pi))
+                                      / (2 * pi))) - 1))) * pi
+
+    output_angle = p1 - p2
+
+    return output_angle
+
+def truncated_remainder(dividend, divisor):
+    divided_number = dividend / divisor
+    divided_number = \
+        -int(-divided_number) if divided_number < 0 else int(divided_number)
+
+    remainder = dividend - divisor * divided_number
+
+    return remainder

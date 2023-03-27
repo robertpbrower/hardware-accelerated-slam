@@ -1,6 +1,29 @@
 # hardware-accelerated-slam
 Implementation of SLAM for PYNQ platform
 
+## March 27th update
+
+### Converting matlab to Python
+
+This update will focus mostly on the start of the work implementing a hardware component as well as an update on the state of the software implementation. Since the last update, the matlab implementation is in the process of being moved to python. The graphing implementation is completely ported to python and the algorithm is about a third of the way done. In a similar theme as the last update, it is proving to be a significant amount of work to move the SLAM implementation to python. 
+
+### Existing IP as a starting point
+
+Most of the work since the last update has been related to implementing a hardware component. One of the critical operations for the SLAM algorithm is large matrix multiplications of various sizes to calculate the kalman gain and update the predicted state and covariance. Since matrix multiplications is a common mathematical operation there is already an extensive amount of IP that is openly available to that can serve as a starting point for my work. The vitis HLS and vivado projects are located in `/hardware/matmult-master` and `/hardware/project_1` respectively.
+
+The existing IP that I chose to base my work on is an implementation posted on Github called matmult posted by the user twaclaw. The project posted has an optimized hardware implementation of a matrix multiplier with matrices sized 128x128. This is far larger than what is needed for my algorithm and thus the first step was to reduce the size. Unfortunately, while the original was about 3 times faster than numPy's matrix multiplication for that size, reducing the hardware to support 64x64 matrices reduced the comparative speed to be about equal between hardware and software. Below are two screenshots of the hardware running compared to a software implementation showing the timing of the operations. 
+
+![](/hardware/128_timeit.PNG)
+![](/hardware/64_timeit.PNG)
+
+Because of the smaller matrices, it is possible that the hardware's speed could be improved by using more area than what was possible with the larger matrices. This work is ongoing. 
+
+### Driver to support arbitrary sized matrices    
+
+The other aspect for implementing hardware matrix multiplications is the need to support matrices of changing sizes. The state and covariance matrices grow as the algorithm runs and thus requires matrix multiplications of different sizes. A driver is needed to construct matrices of the same size as the hardware to perform the multiplication then extract the result for the original matrices from the larger result. The python implementation of this is located in `/hardware/matmult_driver.py`. The code to support matrices of arbitrary size along with the hardware interface can been seen in `/hardware/matmult-64.ipynd`. The screen shot below shows the code running. Unfortunately, the operations to construct the larger matrix are quite slow and thus supporting arbitrary size matrix multiplications is much slower than a single size natively supported by the hardware. There is also currently a limitation in that the matrices must be square, the algorithm requires multiplying non square matrices and thus this must be changed to allow that. 
+
+![](/hardware/expanded_matrix.PNG)
+
 
 ## March 2nd update
 
